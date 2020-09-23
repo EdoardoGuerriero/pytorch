@@ -6,6 +6,10 @@
 #include <thread>
 
 #include <c10/core/thread_pool.h>
+#ifdef USE_CUDA
+#include <c10/cuda/CUDAFunctions.h>
+#include <c10/cuda/CUDAStream.h>
+#endif
 #include <c10d/PrefixStore.hpp>
 #include <c10d/ProcessGroup.hpp>
 #include <c10d/Store.hpp>
@@ -134,6 +138,14 @@ struct AggregatedNetworkData {
   uint64_t totalErrors{0};
 };
 
+#ifdef USE_CUDA
+using at::cuda::CUDAStream;
+#endif
+
+namespace {
+struct DevicesContext;
+}
+
 // TensorPipeAgent leverages TensorPipe (https://github.com/pytorch/tensorpipe)
 // to transparently move tensors and payloads through the fastest available
 // transport or channel. It acts like a hybrid RPC transport, providing shared
@@ -200,7 +212,7 @@ class TensorPipeAgent : public RpcAgent {
   // by client, and read request messages by server.
   void pipeRead(
       const std::shared_ptr<tensorpipe::Pipe>&,
-      std::function<void(const tensorpipe::Error&, Message&&)>);
+      std::function<void(const tensorpipe::Error&, Message&&, DevicesContext&&)>);
 
   // TensorPipe write function that could be used to write response
   // messages by server, and write request messages by client.
@@ -220,7 +232,8 @@ class TensorPipeAgent : public RpcAgent {
   void sendCompletedResponseMessage(
       std::shared_ptr<tensorpipe::Pipe>& pipe,
       std::shared_ptr<FutureMessage>& futureResponseMessage,
-      uint64_t messageId);
+      uint64_t messageId,
+      DevicesContext&& ctx);
 
   // Collects metrics from successful RPC calls
   void trackNetworkData(
